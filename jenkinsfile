@@ -1,0 +1,74 @@
+pipeline {
+    agent any
+
+    tools {
+        maven 'Maven'   // Specify tools (if needed)
+        jdk 'JDK11'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+                // Ensure that this is the 'main' branch before proceeding
+                script {
+                    if (env.GIT_BRANCH != 'origin/main') {
+                        currentBuild.result = 'SUCCESS'  // No further steps if not on main
+                        return
+                    }
+                }
+            }
+        }
+
+        stage('Code Quality Analysis') {
+            steps {
+                script {
+                    // Run SonarQube Analysis
+                    withSonarQubeEnv('SonarQube') {
+                        sh 'mvn sonar:sonar'
+                    }
+                }
+            }
+        }
+
+        stage('Code Coverage') {
+            steps {
+                sh 'mvn clean test'
+                jacoco execPattern: '**/jacoco.exec'
+            }
+        }
+
+        stage('Cyclomatic Complexity') {
+            steps {
+                sh 'lizard . > lizard-report.txt'
+                archiveArtifacts artifacts: 'lizard-report.txt', allowEmptyArchive: true
+            }
+        }
+
+        stage('Dependency Vulnerability Check') {
+            steps {
+                sh 'dependency-check.sh --project MyProject --scan ./ --out dependency-check-report'
+                archiveArtifacts artifacts: 'dependency-check-report/*', allowEmptyArchive: true
+            }
+        }
+
+        stage('Build') {
+            steps {
+                sh 'mvn clean package'
+            }
+        }
+    }
+
+    post {
+        success {
+            emailext subject: 'Build Successful: ${env.JOB_NAME} #${env.BUILD_NUMBER}',
+                     body: "The Jenkins build for job '${env.JOB_NAME}' (Build #${env.BUILD_NUMBER}) was successful.\n\nDetails:\nBuild URL: ${env.BUILD_URL}\nConsole Output: ${env.BUILD_URL}console",
+                     to: 'madhurdevops30@gmail.com'
+        }
+        failure {
+            emailext subject: 'Build Failed: ${env.JOB_NAME} #${env.BUILD_NUMBER}',
+                     body: "The Jenkins build for job '${env.JOB_NAME}' (Build #${env.BUILD_NUMBER}) has failed.\n\nDetails:\nBuild URL: ${env.BUILD_URL}\nConsole Output: ${env.BUILD_URL}console",
+                     to: 'madhurdevops30@gmail.com'
+        }
+    }
+}
